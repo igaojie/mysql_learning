@@ -1,0 +1,251 @@
+#MySQL多实例安装
+ 
+### 为什么要使用多实例架构？
+ 
+ 1. 充分利用服务器资源
+
+### 如何安装单机多实例？
+
+文档：https://dev.mysql.com/doc/refman/5.7/en/mysqld-multi.html
+
+
+```
+//看看自带的例子配置文件
+# mysqld_mulit --example 
+
+# vim /etc/my.cnf
+
+
+[mysqld_multi]
+mysqld     = /usr/local/Cellar/mysql/5.7.20/bin/mysqld_safe
+mysqladmin = /usr/local/Cellar/mysql/5.7.20/bin/mysqladmin
+log = /Users/ShaoGaoJie/Works/mysqldata/mysqld_multi.log
+
+
+[mysqld3308]
+port = 3308
+socket = /tmp/mysql.sock3308
+datadir = /Users/ShaoGaoJie/Works/mysqldata/data3308
+
+
+
+//初始化数据库
+root@MacBook-Air-2 ~# mysqld --initialize --datadir=/Users/ShaoGaoJie/Works/mysqldata/data3308
+
+
+//从这可以看出来 mysqld3308没有启动
+➜  ~ git:(master) ✗ mysqld_multi report
+Reporting MySQL servers
+MySQL server from group: mysqld3308 is not running
+
+//启动 3308
+➜  ~ git:(master) ✗ mysqld_multi start 3308
+➜  ~ git:(master) ✗ mysqld_multi report
+Reporting MySQL servers
+MySQL server from group: mysqld3308 is running
+
+//
+✗ ps -ef | grep mysql
+
+  501 33194     1   0 10:09上午 ttys000    0:00.05 /bin/sh /usr/local/Cellar/mysql/5.7.20/bin/mysqld_safe --port=3308 --socket=/tmp/mysql.sock3308 --datadir=/Users/ShaoGaoJie/Works/mysqldata/data3308
+  501 33354 33194   0 10:09上午 ttys000    0:00.47 /usr/local/Cellar/mysql/5.7.20/bin/mysqld --basedir=/usr/local/Cellar/mysql/5.7.20 --datadir=/Users/ShaoGaoJie/Works/mysqldata/data3308 --plugin-dir=/usr/local/Cellar/mysql/5.7.20/lib/plugin --log-error=/Users/ShaoGaoJie/Works/mysqldata/mysql_error.log --pid-file=MacBook-Air-2.local.pid --socket=/tmp/mysql.sock3308 --port=3308
+  
+
+//登录3308 试试
+➜  ~ git:(master) ✗ mysql -uroot -p -P3308 -S /tmp/mysql.sock3308
+密码可以从日志里找出来 比如 我的是：
+2017-12-31T01:40:49.803827Z 1 [Note] A temporary password is generated for root@localhost: su2z)yw_!Vxw
+
+连接成功。那么 多实例安装也成功了！！！！
+
+```
+
+### 注意
+配置文件里 my.cnf里 [mysqld3308]的配置和 [mysqld]的配置也会遵循 替换原则。
+
+### 启动原理
+真实的启动文件为 /usr/local/opt/mysql/bin/mysqld
+
+#### mysqld  mysqld_safe /etc/init.d/mysql.server 的区别
+
+```
+mysqld --default-file=/etc/my.cnf 也可以启动mysql
+
+mysqld_safe --default-file=/etc/my.cnf也可以启动，但是 会多出来一个守护进程。如果发现mysqd的进程挂掉了 会自动拉起一个新的服务。
+
+
+// mysqld_safe是一个可执行脚本
+➜  bin file mysqld_safe
+mysqld_safe: POSIX shell script text executable, ASCII text
+
+
+
+```
+#### 关闭mysql服务
+```
+1. mysqladmin -uxxx -pxxx -S /xxx/mysql.sock shutdown
+2. 登录进入mysql客户端 执行 shutdown也可以
+3. /etc/init.d/mysql.server stop 也可以。其实就是 kill 。mysql 会接收kill的信号来出发关闭 
+
+```
+
+
+#### 如果root密码忘了怎么办？
+##### 1. skip-grant-tables
+```
+vim /etc/my.cnf
+[mysqld]
+# Only allow connections from localhost
+bind-address = 127.0.0.1
+port = 3307
+socket = /tmp/mysql.sock
+
+//加上这么一句 就是不加载权限验证表
+skip-grant-tables
+
+```
+
+##### 2.登录client
+```
+> mysql
+> 
+mysql> set password = '123';
+ERROR 1290 (HY000): The MySQL server is running with the --skip-grant-tables option so it cannot execute this statement
+
+//这个时候是修改不了的，那怎办？
+mysql> use mysql
+mysql> update user set authentication_string = password('123') where User = 'root';
+Query OK, 1 row affected, 1 warning (0.00 sec)
+Rows matched: 1  Changed: 1  Warnings: 1
+
+
+
+```
+
+##### 3.修改配置文件 注释掉 skip-grant-tables 启动 就可以通过修改过的密码来登录了
+####密码过期时间的设置 
+
+```
+https://dev.mysql.com/doc/refman/5.7/en/password-management.html
+
+disconnect_on_expired_password 这个参数在5.7的某些版本里有坑，不是默认是0 而是360 也就是一年就会过期一次。所以 建议把这个参数写入配置文件。
+
+vim  /etc/my.cnf
+
+disconnect_on_expired_password = 0 永不过期
+
+mysql> show variables like '%password%';
++----------------------------------------+-----------------+
+| Variable_name                          | Value           |
++----------------------------------------+-----------------+
+| default_password_lifetime              | 0               |
+| disconnect_on_expired_password         | ON              |
+| log_builtin_as_identified_by_password  | OFF             |
+| mysql_native_password_proxy_users      | OFF             |
+| old_passwords                          | 0               |
+| report_password                        |                 |
+| sha256_password_auto_generate_rsa_keys | ON              |
+| sha256_password_private_key_path       | private_key.pem |
+| sha256_password_proxy_users            | OFF             |
+| sha256_password_public_key_path        | public_key.pem  |
++----------------------------------------+-----------------+
+10 rows in set (0.00 sec)
+
+```
+
+## 官方文档的一个坑
+```
+
+这是官方文档：https://dev.mysql.com/doc/refman/5.7/en/mysqld-multi.html
+
+[mysqld_multi]
+mysqld     = /usr/local/mysql/bin/mysqld_safe
+mysqladmin = /usr/local/mysql/bin/mysqladmin
+user       = multi_admin
+password   = my_password  -------注意：这个如果关键字写成password 是关闭不了的，需要写成 pass = my_password.
+```
+
+
+## 多实例安装不同版本的MySQL
+
+### 安装mysql 8.0版本
+```
+1. 下载mysql 8.0的包 https://cdn.mysql.com//Downloads/MySQL-8.0/mysql-8.0.3-rc-macos10.12-x86_64.tar.gz
+
+2. 解压到 /usr/local/mysql-8.0.3-rc-macos10.12-x86_64
+3. 初始化数据库 
+cd /usr/local/mysql-8.0.3-rc-macos10.12-x86_64
+➜  mysql-8.0.3-rc-macos10.12-x86_64#  bin/mysqld --initialize --datadir=/Users/ShaoGaoJie/Works/mysqldata/data3380
+
+修改my.cnf
+vim /etc/my.cnf
+[mysqld3380]
+basedir=/usr/local/mysql-8.0.3-rc-macos10.12-x86_64
+server-id = 3380
+port = 3380
+socket = /tmp/mysql.sock3380
+datadir = /Users/ShaoGaoJie/Works/mysqldata/data3380
+
+
+4. mysqld_multi report
+MySQL server from group: mysqld3380 is not running
+5. 启动 mysqld_multi start 3380
+➜  bin mysqld_multi report
+MySQL server from group: mysqld3380 is running
+
+
+6. 安装完毕
+```
+
+
+### 安装mysql 5.6版本
+```
+1. 下载5.6版本的安装包 https://cdn.mysql.com//Downloads/MySQL-5.6/mysql-5.6.38-macos10.12-x86_64.tar.gz
+2. 解压到 ：/usr/local/mysql-5.6.38-macos10.12-x86_64
+3. cd /usr/local/mysql-5.6.38-macos10.12-x86_64
+
+   //注意：mysql 5.6 的初始化 和 5.7 8.0都不一样哈。。。
+   ➜ scripts/mysql_install_db --user=mysql --datadir=/Users/ShaoGaoJie/Works/mysqldata/data3356
+
+4. vim /etc/my.cnf
+[mysqld3356]
+basedir = /usr/local/mysql-5.6.38-macos10.12-x86_64
+server-id = 3356
+port = 3356
+socket = /tmp/mysql.sock3356
+datadir = /Users/ShaoGaoJie/Works/mysqldata/data3356
+
+5. report看看
+➜  bin mysqld_multi report
+Reporting MySQL servers
+MySQL server from group: mysqld3356 is not running
+
+6. 启动
+➜  bin mysqld_multi start 3356
+7. mysqld_multi report
+MySQL server from group: mysqld3356 is running
+
+8. 安装完毕
+```
+#### 细节
+
+以上安装的几个版本 都是用5.7的mysqld_safe来守护的。下面看看
+
+```
+➜  bin ps -ef | grep mysql
+  501  9412     1   0 11:52上午 ??         0:00.04 /bin/sh /usr/local/opt/mysql/bin/mysqld_safe --datadir=/usr/local/var/mysql
+  501  9554  9412   0 11:52上午 ??         0:02.72 /usr/local/opt/mysql/bin/mysqld --basedir=/usr/local/opt/mysql --datadir=/usr/local/var/mysql --plugin-dir=/usr/local/opt/mysql/lib/plugin --log-error=/Users/ShaoGaoJie/Works/mysqldata/mysql_error.log --pid-file=MacBook-Air-2.local.pid --socket=/tmp/mysql.sock --port=3307
+    0 53337     1   0 12:45下午 ??         0:00.09 /bin/sh /Applications/XAMPP/xamppfiles/bin/mysqld_safe --datadir=/Applications/XAMPP/xamppfiles/var/mysql --pid-file=/Applications/XAMPP/xamppfiles/var/mysql/MacBook-Air-2.local.pid
+   74 53789 53337   0 12:45下午 ??         0:01.94 /Applications/XAMPP/xamppfiles/sbin/mysqld --basedir=/Applications/XAMPP/xamppfiles --datadir=/Applications/XAMPP/xamppfiles/var/mysql --plugin-dir=/Applications/XAMPP/xamppfiles/lib/mysql/plugin/ --user=mysql --log-error=/Users/ShaoGaoJie/Works/mysql_error.log --pid-file=/Applications/XAMPP/xamppfiles/var/mysql/MacBook-Air-2.local.pid --socket=/Applications/XAMPP/xamppfiles/var/mysql/mysql.sock --port=3306
+    0 89244 20298   0  1:29下午 ??         0:00.02 /bin/sh /Applications/XAMPP/xamppfiles/ctlscript.sh status mysql
+  501 72025     1   0  1:08下午 ttys000    0:00.05 /bin/sh /usr/local/Cellar/mysql/5.7.20/bin/mysqld_safe --basedir=/usr/local/mysql-8.0.3-rc-macos10.12-x86_64 --server-id=3380 --port=3380 --socket=/tmp/mysql.sock3380 --datadir=/Users/ShaoGaoJie/Works/mysqldata/data3380
+  501 72222 72025   0  1:08下午 ttys000    0:01.24 /usr/local/mysql-8.0.3-rc-macos10.12-x86_64/bin/mysqld --basedir=/usr/local/mysql-8.0.3-rc-macos10.12-x86_64 --datadir=/Users/ShaoGaoJie/Works/mysqldata/data3380 --plugin-dir=/usr/local/mysql-8.0.3-rc-macos10.12-x86_64/lib/plugin --server-id=3380 --log-error=/Users/ShaoGaoJie/Works/mysqldata/mysql_error.log --pid-file=MacBook-Air-2.local.pid --socket=/tmp/mysql.sock3380 --port=3380
+  501 85206     1   0  1:25下午 ttys000    0:00.05 /bin/sh /usr/local/Cellar/mysql/5.7.20/bin/mysqld_safe --basedir=/usr/local/mysql-5.6.38-macos10.12-x86_64 --server-id=3356 --port=3356 --socket=/tmp/mysql.sock3356 --datadir=/Users/ShaoGaoJie/Works/mysqldata/data3356
+  501 85415 85206   0  1:25下午 ttys000    0:00.66 /usr/local/mysql-5.6.38-macos10.12-x86_64/bin/mysqld --basedir=/usr/local/mysql-5.6.38-macos10.12-x86_64 --datadir=/Users/ShaoGaoJie/Works/mysqldata/data3356 --plugin-dir=/usr/local/mysql-5.6.38-macos10.12-x86_64/lib/plugin --server-id=3356 --log-error=/Users/ShaoGaoJie/Works/mysqldata/mysql_error.log --pid-file=MacBook-Air-2.local.pid --socket=/tmp/mysql.sock3356 --port=3356
+  501 88744     1   0  1:29下午 ttys000    0:00.05 /bin/sh /usr/local/Cellar/mysql/5.7.20/bin/mysqld_safe --server-id=3308 --port=3308 --socket=/tmp/mysql.sock3308 --datadir=/Users/ShaoGaoJie/Works/mysqldata/data3308
+  501 88927 88744   0  1:29下午 ttys000    0:00.49 /usr/local/Cellar/mysql/5.7.20/bin/mysqld --basedir=/usr/local/Cellar/mysql/5.7.20 --datadir=/Users/ShaoGaoJie/Works/mysqldata/data3308 --plugin-dir=/usr/local/Cellar/mysql/5.7.20/lib/plugin --server-id=3308 --log-error=/Users/ShaoGaoJie/Works/mysqldata/mysql_error.log --pid-file=MacBook-Air-2.local.pid --socket=/tmp/mysql.sock3308 --port=3308
+  501 89057     1   0  1:29下午 ttys000    0:00.06 /bin/sh /usr/local/Cellar/mysql/5.7.20/bin/mysqld_safe --server-id=3309 --port=3309 --socket=/tmp/mysql.sock3309 --datadir=/Users/ShaoGaoJie/Works/mysqldata/data3309
+  501 89242 89057   0  1:29下午 ttys000    0:00.47 /usr/local/Cellar/mysql/5.7.20/bin/mysqld --basedir=/usr/local/Cellar/mysql/5.7.20 --datadir=/Users/ShaoGaoJie/Works/mysqldata/data3309 --plugin-dir=/usr/local/Cellar/mysql/5.7.20/lib/plugin --server-id=3309 --log-error=/Users/ShaoGaoJie/Works/mysqldata/mysql_error.log --pid-file=MacBook-Air-2.local.pid --socket=/tmp/mysql.sock3309 --port=3309
+
+```
+当然，也可以让每个版本的mysqld_safe来守护自己的mysqld。
