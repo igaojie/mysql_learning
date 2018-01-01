@@ -1,0 +1,219 @@
+# MySQL数据类型-INT类型
+## INT类型
+|类型|占用空间|最小值|最大值|
+|:--|:--|:--|:--|
+|       |字节    |（Signed/Unsigned）   |(Signed/UnSigned)|
+|TINYINT|1      |-128   /  -2^7       |127    /  2^7-1              |
+|       |       |0                    |255              |
+|SMALLINT|2     |-32768    / -2^15      |32767  /  2^15-1 |
+|        |      |0                      |65535 /  2^16-1|
+|MEDIUMINT|3    |-8388608  / -2^23             |8388607   / -2^23 - 1|
+|         |     |0                       |16777215 /  2^24-1|
+|INT      |4    |-2^31                  |2^31-1| 
+|         |     |0                      |2^32-1|
+|BIGINT   |8    |-2^63                  |2^63-1|
+|         |     |0                      |2^64-1| 
+
+### 属性
+1. UNSIGNED / SIGNED  是否有符号
+2. ZEROFILL  显示属性 值不做任何修改
+3. AUTO_INCREMENT 自增、每张表一个、必须是索引的一部分
+
+### 总结
+1. 推荐不要使用UNSIGNED
+2. UNSIGNED可能会有溢出的现象发生
+3. 自增INT类型的主键建议使用BIGINT
+
+
+### 自增值回溯的问题？
+```
+mysql> select version();
++------------+
+| version()  |
++------------+
+| 5.7.20-log |
++------------+
+1 row in set (0.01 sec)
+
+mysql> use test;
+Database changed
+
+mysql> CREATE TABLE `t2` (
+    ->   `id` bigint(11) unsigned NOT NULL AUTO_INCREMENT,
+    ->   `age` int(11) DEFAULT NULL,
+    ->   PRIMARY KEY (`id`)
+    -> ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+Query OK, 0 rows affected (0.08 sec)
+
+mysql> insert t2 values (NULL,1);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> insert t2 values (NULL,2);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> insert t2 values (NULL,3);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> insert t2 values (NULL,4);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> insert t2 values (NULL,5);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> show create table t2;
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Table | Create Table                                                                                                                                                                     |
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| t2    | CREATE TABLE `t2` (
+  `id` bigint(11) unsigned NOT NULL AUTO_INCREMENT,
+  `age` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8 |
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+1 row in set (0.00 sec)
+
+mysql> select * from t2;
++----+------+
+| id | age  |
++----+------+
+|  1 |    1 |
+|  2 |    2 |
+|  3 |    3 |
+|  4 |    4 |
+|  5 |    5 |
++----+------+
+5 rows in set (0.00 sec)
+
+//注意这里将id=5删掉了。
+mysql> delete from t2 where id = 5;
+Query OK, 1 row affected (0.00 sec)
+
+//这个时候 AUTO_INCREMENT=6 还是正常的 自增的。
+mysql> show create table t2;
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Table | Create Table                                                                                                                                                                     |
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| t2    | CREATE TABLE `t2` (
+  `id` bigint(11) unsigned NOT NULL AUTO_INCREMENT,
+  `age` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8 |
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+1 row in set (0.00 sec)
+
+
+//重启MYSQL实例之后  
+
+//重启之后 AUTO_INCREMENT=5 变成5了。。。。回去了 这个就是自增字段回溯现象
+// select max(id) + 1 from t2; 
+mysql> show create table t2;
+ERROR 2006 (HY000): MySQL server has gone away
+No connection. Trying to reconnect...
+Connection id:    3
+Current database: test
+
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Table | Create Table                                                                                                                                                                     |
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| t2    | CREATE TABLE `t2` (
+  `id` bigint(11) unsigned NOT NULL AUTO_INCREMENT,
+  `age` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8 |
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+1 row in set (0.02 sec)
+
+```
+
+不过，这种现象已经在MySQL 8.0里得到了解决。
+
+```
+mysql> select version();
++--------------+
+| version()    |
++--------------+
+| 8.0.3-rc-log |
++--------------+
+1 row in set (0.00 sec)
+
+mysql> use test;
+Database changed
+mysql> CREATE TABLE `t2` (   `id` bigint(11) unsigned NOT NULL AUTO_INCREMENT,   `age` int(11) DEFAULT NULL,   PRIMARY KEY (`id`) ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+Query OK, 0 rows affected (0.06 sec)
+
+mysql> insert t2 values (null,1);
+Query OK, 1 row affected (0.02 sec)
+
+mysql> insert t2 values (null,2);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> insert t2 values (null,3);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> insert t2 values (null,4);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> insert t2 values (null,5);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> select * from t2;
++----+------+
+| id | age  |
++----+------+
+|  1 |    1 |
+|  2 |    2 |
+|  3 |    3 |
+|  4 |    4 |
+|  5 |    5 |
++----+------+
+5 rows in set (0.00 sec)
+
+mysql> show create table t2;
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Table | Create Table                                                                                                                                                                     |
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| t2    | CREATE TABLE `t2` (
+  `id` bigint(11) unsigned NOT NULL AUTO_INCREMENT,
+  `age` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8 |
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+1 row in set (0.01 sec)
+
+//这里同样将id=5的删掉
+mysql> delete from t2 where id = 5;
+Query OK, 1 row affected (0.00 sec)
+
+// AUTO_INCREMENT=6
+mysql> show create table t2;
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Table | Create Table                                                                                                                                                                     |
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| t2    | CREATE TABLE `t2` (
+  `id` bigint(11) unsigned NOT NULL AUTO_INCREMENT,
+  `age` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8 |
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+1 row in set (0.00 sec)
+
+//重启mysql 8.0实例 重新看AUTO_INCREMENT=6 回溯现象已经修复
+mysql> show create table t2;
+ERROR 2006 (HY000): MySQL server has gone away
+No connection. Trying to reconnect...
+Connection id:    7
+Current database: test
+
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Table | Create Table                                                                                                                                                                     |
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| t2    | CREATE TABLE `t2` (
+  `id` bigint(11) unsigned NOT NULL AUTO_INCREMENT,
+  `age` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8 |
++-------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+1 row in set (0.02 sec)
+
+```
+
