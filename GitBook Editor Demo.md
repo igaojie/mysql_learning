@@ -6,6 +6,7 @@ GitBook allows you to organize your book into chapters, each chapter is stored i
 
 ```php
 <?php
+//测试gitbook
 file_get_contents();
 ?>
 ```
